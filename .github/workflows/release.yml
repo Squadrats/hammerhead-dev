@@ -1,0 +1,53 @@
+name: Release
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version, e.g. 2026.11.23
+        required: true
+      version_code:
+        description: Android versionCode, higher than the last release's
+        required: true
+      apk_url:
+        description: Temporary URL of the built APK
+        required: true
+      sha256:
+        description: SHA-256 of the APK
+        required: true
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch and check the APK
+        env:
+          APK_URL: ${{ inputs.apk_url }}
+          SHA256: ${{ inputs.sha256 }}
+        run: |
+          curl -fsSL "$APK_URL" -o squadrats-karoo-dev.apk
+          echo "$SHA256  squadrats-karoo-dev.apk" | sha256sum -c -
+      # Karoo's app manifest (karoo-ext KarooAppManifest): the Squadrats app on a Karoo reads it to
+      # learn a newer version is out
+      - name: Write the manifest
+        env:
+          VERSION: ${{ inputs.version }}
+          VERSION_CODE: ${{ inputs.version_code }}
+        run: |
+          jq -n --arg v "$VERSION" --argjson c "$VERSION_CODE" '{
+            label: "Squadrats Dev",
+            packageName: "com.squadrats.mobile.dev",
+            latestApkUrl: "https://github.com/Squadrats/hammerhead-dev/releases/latest/download/squadrats-karoo-dev.apk",
+            latestVersion: $v,
+            latestVersionCode: $c,
+            developer: "Squadrats",
+            description: "Development build of Squadrats for Karoo."
+          }' > manifest.json
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          gh release create "v$VERSION" squadrats-karoo-dev.apk manifest.json -R "$GITHUB_REPOSITORY" \
+            --title "Squadrats for Karoo (dev) $VERSION" \
+            --notes "Development build. Install via the Squadrats development app."
